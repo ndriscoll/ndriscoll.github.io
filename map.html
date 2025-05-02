@@ -46,7 +46,8 @@
 
 <div id="map-container">
   <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-    <g id="tile-layer"></g>
+    <g id="tile-layer-a"></g>
+    <g id="tile-layer-b" visibility="hidden"></g>
     <g id="marker-layer"></g>
   </svg>
 </div>
@@ -70,45 +71,72 @@ let mouseY = null;
 
 const container = document.getElementById("map-container");
 const svg = document.getElementById("map-svg");
-const tileLayer = document.getElementById("tile-layer");
+const tileLayerA = document.getElementById("tile-layer-a");
+const tileLayerB = document.getElementById("tile-layer-b");
 const markerLayer = document.getElementById("marker-layer");
 const debug = document.getElementById("debug");
+
+let currentTileLayer = 'a';
 
 const tiles = [];
 for (let dy = -1; dy <= 1; dy++) {
   for (let dx = -1; dx <= 1; dx++) {
+    tiles.push({ dx, dy });
+  }
+}
+
+function updateTiles(callback) {
+  const nextLayer = currentTileLayer === 'a' ? tileLayerB : tileLayerA;
+  const oldLayer = currentTileLayer === 'a' ? tileLayerA : tileLayerB;
+
+  nextLayer.innerHTML = '';
+
+  let imagesToLoad = tiles.length;
+  let loadedCount = 0;
+
+  for (const { dx, dy } of tiles) {
+    const tx = Math.floor(centerX / scale + dx);
+    const ty = Math.floor(centerY / scale + dy);
+    const href = `https://a.tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`;
+
     const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
     image.setAttribute("width", tileSize);
     image.setAttribute("height", tileSize);
     image.setAttribute("x", (dx + 1) * tileSize);
     image.setAttribute("y", (dy + 1) * tileSize);
-    tileLayer.appendChild(image);
-    tiles.push({ image, dx, dy });
-  }
-}
+    image.setAttribute("href", href);
 
-function updateTiles() {
-  for (const { image, dx, dy } of tiles) {
-    const tx = Math.floor(centerX / scale + dx);
-    const ty = Math.floor(centerY / scale + dy);
-    image.setAttribute("href", `https://a.tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`);
+    image.addEventListener('load', () => {
+      loadedCount++;
+      if (loadedCount === imagesToLoad) {
+        oldLayer.setAttribute("visibility", "hidden");
+        nextLayer.setAttribute("visibility", "visible");
+        currentTileLayer = currentTileLayer === 'a' ? 'b' : 'a';
+        if (callback) callback();
+      }
+    });
+
+    nextLayer.appendChild(image);
   }
 }
 
 function updateMap() {
-  updateTiles();
+  updateTiles(() => {
+    const initialPixelX = -Math.floor((initialCenterX / scale) * tileSize);
+    const initialPixelY = -Math.floor((initialCenterY / scale) * tileSize);
+    const pixelX = -Math.floor((centerX / scale) * tileSize);
+    const pixelY = -Math.floor((centerY / scale) * tileSize);
 
-  const initialPixelX = -Math.floor((initialCenterX / scale) * tileSize);
-  const initialPixelY = -Math.floor((initialCenterY / scale) * tileSize);
-  const pixelX = -Math.floor((centerX / scale) * tileSize);
-  const pixelY = -Math.floor((centerY / scale) * tileSize);
+    offsetX = pixelX;
+    offsetY = pixelY;
 
-  offsetX = pixelX;
-  offsetY = pixelY;
+    const transform = `translate(${-tileSize / 2 + pixelX % tileSize}, ${-tileSize / 2 + pixelY % tileSize})`;
+    tileLayerA.setAttribute("transform", transform);
+    tileLayerB.setAttribute("transform", transform);
 
-  tileLayer.setAttribute("transform", `translate(${-tileSize / 2 + pixelX % tileSize}, ${-tileSize / 2 + pixelY % tileSize})`);
-  markerLayer.setAttribute("transform", `translate(${-tileSize / 2 + pixelX - initialPixelX}, ${-tileSize / 2 + pixelY - initialPixelY})`);
-  updateDebug();
+    markerLayer.setAttribute("transform", `translate(${-tileSize / 2 + pixelX - initialPixelX}, ${-tileSize / 2 + pixelY - initialPixelY})`);
+    updateDebug();
+  });
 }
 
 function updateDebug() {
@@ -125,13 +153,7 @@ offsetY:        ${offsetY.toFixed(6)}
 mapX:           ${mapX.toFixed(6)}
 mapY:           ${mapY.toFixed(6)}
 mouse (rel):    ${mouseX !== null ? mouseX.toFixed(1) : '--'}, ${mouseY !== null ? mouseY.toFixed(1) : '--'}
-
-Tile URLs:
 `;
-
-  for (const { dx, dy, image } of tiles) {
-    debugText += ` (${dx >= 0 ? '+' : ''}${dx}, ${dy >= 0 ? '+' : ''}${dy}) → ${image.getAttribute("href")}\n`;
-  }
 
   debug.textContent = debugText;
 }
@@ -194,16 +216,10 @@ document.addEventListener("mousemove", (e) => {
 });
 
 container.addEventListener('wheel', (e) => {
-  e.preventDefault(); // Prevent page scroll
-
-  // Determine zoom direction based on wheel delta
-  if (e.deltaY < 0) {
-    zoomIn();
-  } else if (e.deltaY > 0) {
-    zoomOut();
-  }
+  e.preventDefault();
+  if (e.deltaY < 0) zoomIn();
+  else if (e.deltaY > 0) zoomOut();
 });
-
 
 function addMarker(x, y) {
   const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -212,7 +228,6 @@ function addMarker(x, y) {
   marker.setAttribute("stroke", "black");
   marker.setAttribute("stroke-width", "1");
 
-  // Calculate position in pixel space
   const px = ((x - centerX) / scale) * tileSize + 1.5 * tileSize;
   const py = ((y - centerY) / scale) * tileSize + 1.5 * tileSize;
 
@@ -222,7 +237,6 @@ function addMarker(x, y) {
 }
 
 addMarker(34464518, 22056525);
-
 
 updateMap();
 </script>
